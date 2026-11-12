@@ -1,0 +1,9 @@
+[project]
+name = "tracedrive"
+version = "0.1.0"
+description = "A local robotics telemetry workbench with time-weighted analysis."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+line-length = 110

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>TraceDrive · Robotics telemetry</title>
+    <meta
+      name="description"
+      content="Import robot telemetry, compare tracking error, and inspect threshold crossings in a local workspace."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to workspace</a>
+    <div class="shell">
+      <aside class="rail">
+        <div class="brand">
+          <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path
+              d="M3 19h5l4-12 5 16 4-10h4"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            /></svg
+          >TraceDrive
+        </div>
+        <div>
+          <div class="runs-label">Saved runs</div>
+          <div id="run-list" class="run-list"></div>
+          <p class="no-runs" id="no-runs">No runs imported yet.</p>
+        </div>
+        <details class="import-block" id="upload-details">
+          <summary>Import a run</summary>
+          <form id="upload-form">
+            <div class="field">
+              <label for="run-name">Run name</label
+              ><input
+                id="run-name"
+                maxlength="100"
+                required
+                placeholder="Drive test · afternoon"
+                autocomplete="off"
+              />
+            </div>
+            <div class="field">
+              <label for="csv-file">Telemetry CSV</label
+              ><input
+                id="csv-file"
+                type="file"
+                accept=".csv,text/csv"
+                required
+              /><span class="field-hint upload-hint"
+                >time_s, target_velocity_mps, velocity_mps, battery_v,
+                motor_current_a, temperature_c</span
+              >
+            </div>
+            <button type="submit" class="button primary full">
+              Import CSV
+            </button>
+            <p class="field-hint">
+              Up to 20,000 samples. Timestamps must increase strictly.
+            </p>
+            <a class="small" href="/api/sample.csv" download
+              >Download sample CSV</a
+            >
+          </form>
+        </details>
+        <div class="rail-note">
+          <strong>Measurements, not guesses.</strong>Compare the data before
+          diagnosing the robot. Threshold crossings are clues, not confirmed
+          faults.
+        </div>
+      </aside>
+      <main class="workspace" id="main">
+        <div class="topline">
+          <span class="local">Local workspace</span
+          ><span id="data-origin">No telemetry loaded</span>
+        </div>
+        <div class="heading-row">
+          <div>
+            <h1>Robot telemetry</h1>
+            <p>
+              Compare runs. Find where the measured response leaves the target.
+            </p>
+          </div>
+          <div class="action-row">
+            <button class="button" id="import-button">Import CSV</button
+            ><button class="button primary" id="seed-button">
+              Load example runs
+            </button>
+          </div>
+        </div>
+        <div
+          class="notice"
+          id="notice"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
+        <section class="empty-workspace" id="empty-workspace">
+          <h2>Every run tells a story.</h2>
+          <p>
+            Load two synthetic examples to compare a baseline and tuned
+            response, or import your own robot’s sensor readings.
+          </p>
+          <div class="action-row">
+            <button class="button primary" id="empty-seed">
+              Explore example runs</button
+            ><a class="button" href="/api/sample.csv" download
+              >Get CSV format</a
+            >
+          </div>
+        </section>
+        <section id="analysis" hidden>
+          <div class="run-selects">
+            <div class="field">
+              <label for="baseline-select">Primary run</label
+              ><select id="baseline-select"></select>
+            </div>
+            <div class="field">
+              <label for="compare-select">Compare with</label
+              ><select id="compare-select">
+                <option value="">No comparison</option>
+              </select>
+            </div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="chart-header">
+              <h2 id="chart-title">Velocity tracking</h2>
+              <div class="sensor-tabs" role="group" aria-label="Measurement">
+                <button data-sensor="velocity" aria-pressed="true">
+                  Velocity</button
+                ><button data-sensor="battery" aria-pressed="false">
+                  Battery</button
+                ><button data-sensor="current" aria-pressed="false">
+                  Current</button
+                ><button data-sensor="temperature" aria-pressed="false">
+                  Temperature
+                </button>
+              </div>
+            </div>
+            <div id="plot" class="plot-container"></div>
+            <div id="legend" class="legend"></div>
+            <div class="run-info">
+              <output id="probe-readout"
+                >Point at the chart, or focus it and use the arrow keys, to
+                inspect a sample.</output
+              ><span id="sample-count"></span>
+            </div>
+          </div>
+          <p class="chart-note">
+            Runs align at elapsed time zero. Long traces preserve bucket extrema
+            for display; metrics use every sample.
+          </p>
+          <div class="analysis-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Run measurements</h2>
+                <span>Full dataset</span>
+              </div>
+              <div
+                class="table-wrap"
+                tabindex="0"
+                role="region"
+                aria-label="Run measurements table"
+              >
+                <p class="table-hint">Scroll sideways to see all columns.</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Measurement</th>
+                      <th class="amount" id="metric-left">Primary</th>
+                      <th class="amount" id="metric-right">Comparison</th>
+                      <th class="amount" id="metric-delta">Change</th>
+                    </tr>
+                  </thead>
+                  <tbody id="metrics-body"></tbody>
+                </table>
+              </div>
+              <p class="caption">
+                MAE and RMSE are time-weighted tracking errors. Change means
+                comparison minus primary, not a judgment of improvement.
+              </p>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Threshold crossings</h2>
+                <span id="anomaly-count">0 segments</span>
+              </div>
+              <div class="anomaly-list" id="anomaly-list"></div>
+              <p class="caption" id="threshold-description">
+                Illustrative thresholds. Adjust them to your hardware before
+                drawing conclusions.
+              </p>
+            </section>
+          </div>
+        </section>
+        <footer class="footer">
+          <span>TraceDrive · Robotics analysis workbench</span
+          ><span
+            >Local CSV data · Transparent calculations · Reproducible
+            examples</span
+          >
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
